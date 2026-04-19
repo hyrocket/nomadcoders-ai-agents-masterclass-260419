@@ -158,12 +158,12 @@ st.caption("당신의 성장을 응원하는 AI 라이프 코치입니다!")
 prompt = st.chat_input(
     "라이프코치에게 고민을 털어놓거나 말을 해보세요",
     accept_file=True,
-    file_type=["txt"],
+    file_type=["txt","pdf"],
 )
 
 if prompt:
     for file in prompt.files:
-        if file.type.startswith("text/"):
+        if file.type.startswith("text/") or file.type == "application/pdf":  
             with st.chat_message("ai"):
                 with st.status("⏳ 파일 업로드 중...") as status:
                     uploaded_file = client.files.create(
