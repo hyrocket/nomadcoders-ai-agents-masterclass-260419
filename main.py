@@ -19,6 +19,53 @@ client = OpenAI()
 
 VECTOR_STORE_ID = os.environ.get("VECTOR_STORE_ID")
 
+# Agent를 session_state에 저장 (니꼬쌤 패턴 - 매번 생성하지 않음)
+if "agent" not in st.session_state:
+    st.session_state["agent"] = Agent(
+        name="LIFE COACH",
+        instructions="""
+        당신은 한국어로 소통하는 열정적이고 지지적인 라이프 코치입니다.
+        당신의 역할은 다음과 같습니다:
+        사용자가 목표를 달성할 수 있도록 동기를 부여하고 격려합니다
+        실용적인 자기계발 팁과 조언을 제공합니다
+
+        You MUST use the Web Search Tool before giving any advice:
+            - 동기부여 컨텐츠, 자기개발팁, 습관형성 조언을 검색하고 이를 활용하여 조언하세요
+            - Always search BEFORE answering. Never answer from memory alone.
+
+        You MUST use the File Search Tool when:
+            - 사용자가 목표나 진행 상황에 대해 물어볼 때
+            - 사용자의 개인 목표 문서를 참조해야 할 때
+            - 과거 기록을 바탕으로 조언할 때
+
+        You MUST use the Image Generation Tool when:
+            - 사용자가 비전 보드를 요청할 때
+            - 사용자가 목표 달성을 축하할 때
+            - 동기부여 포스터나 이미지가 필요할 때
+            - Always generate images with English prompts for better results.
+
+        검색 후 따뜻한 말로 답변하고, 항상 응원 메시지로 마무리합니다.
+        """,
+        tools=[
+            WebSearchTool(),
+            FileSearchTool(
+                vector_store_ids=[VECTOR_STORE_ID],
+                max_num_results=3,
+            ),
+            ImageGenerationTool(
+                tool_config={
+                    "type": "image_generation",
+                    "quality": "high",
+                    "output_format": "jpeg",
+                    "partial_images": 1,
+                }
+            ),
+        ],
+    )
+
+agent = st.session_state["agent"]
+
+# SQLiteSession: 대화 기록을 로컬 DB 파일에 저장
 if "session" not in st.session_state:
     st.session_state["session"] = SQLiteSession(
         "life-coach-history",
@@ -61,7 +108,7 @@ async def paint_history():  # 이전 대화 기록을 화면에 표시하는 함
 asyncio.run(paint_history())
 
 
-def update_status(status_container, event):   # 각 이벤트 타입에 따라 status 박스의 메시지와 상태를 업데이트
+def update_status(status_container, event):
     status_messages = {
         "response.web_search_call.completed": ("✅ 웹 검색완료!", "complete"),
         "response.web_search_call.in_progress": ("🔍 웹검색을 시작합니다...", "running"),
@@ -80,57 +127,11 @@ def update_status(status_container, event):   # 각 이벤트 타입에 따라 s
 
 
 async def run_agent(message):
-    agent = Agent(
-        name="LIFE COACH",
-        model="gpt-4o-mini",
-        instructions="""
-        당신은 한국어로 소통하는 열정적이고 지지적인 라이프 코치입니다.
-        당신의 역할은 다음과 같습니다:
-        사용자가 목표를 달성할 수 있도록 동기를 부여하고 격려합니다
-        실용적인 자기계발 팁과 조언을 제공합니다
-
-        You MUST use the Web Search Tool before giving any advice:
-            - 동기부여 컨텐츠, 자기개발팁, 습관형성 조언을 검색하고 이를 활용하여 조언하세요
-            - Always search BEFORE answering. Never answer from memory alone.
-
-        You MUST use the File Search Tool when:
-            - 사용자가 목표나 진행 상황에 대해 물어볼 때
-            - 사용자의 개인 목표 문서를 참조해야 할 때
-            - 과거 기록을 바탕으로 조언할 때
-
-        You MUST use the Image Generation Tool when:
-            - 사용자가 비전 보드를 요청할 때
-            - 사용자가 목표 달성을 축하할 때
-            - 동기부여 포스터나 이미지가 필요할 때
-            - Always generate images with English prompts for better results.
-
-        검색 후 따뜻한 말로 답변하고, 항상 응원 메시지로 마무리합니다.
-        """,
-        tools=[
-            WebSearchTool(),
-            FileSearchTool(
-                vector_store_ids=[VECTOR_STORE_ID],
-                max_num_results=3,
-            ),
-            ImageGenerationTool(
-                tool_config={
-                    "type": "image_generation",
-                    "quality": "high",
-                    "output_format": "jpeg",
-                    "partial_images": 1,
-                }
-            ),
-        ],
-    )
-
     with st.chat_message("ai"):
         status_container = st.status("⏳", expanded=False)
         image_placeholder = st.empty()
         text_placeholder = st.empty()
         response = ""
-
-        st.session_state["image_placeholder"] = image_placeholder
-        st.session_state["text_placeholder"] = text_placeholder
 
         stream = Runner.run_streamed(
             agent,
@@ -151,7 +152,7 @@ async def run_agent(message):
                     image_placeholder.image(image)
 
 
-st.title("🔥Life Coach Agent")
+st.title("🔥 Life Coach Agent")
 st.caption("당신의 성장을 응원하는 AI 라이프 코치입니다!")
 
 prompt = st.chat_input(
@@ -161,11 +162,6 @@ prompt = st.chat_input(
 )
 
 if prompt:
-    if "image_placeholder" in st.session_state:
-        st.session_state["image_placeholder"].empty()
-    if "text_placeholder" in st.session_state:
-        st.session_state["text_placeholder"].empty()
-
     for file in prompt.files:
         if file.type.startswith("text/"):
             with st.chat_message("ai"):
